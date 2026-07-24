@@ -1,0 +1,30 @@
+{
+  "name": "channelx",
+  "version": "1.0.0",
+  "description": "Automatically repost new Telegram channel messages to Twitter (X)",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/**/*.test.js",
+    "test:watch": "node --test --watch test/**/*.test.js"
+  },
+  "keywords": [
+    "telegram",
+    "twitter",
+    "x",
+    "repost",
+    "bot",
+    "crosspost"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "node-telegram-bot-api": "^0.66.0",
+    "twitter-api-v2": "^1.19.0"
+  }
+}
