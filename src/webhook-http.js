@@ -63,10 +63,21 @@ const handleWebhookRequest = async (app, req, res) => {
     const result = await app.handleUpdate(update);
     return json(res, 200, { ok: true, result: result || null });
   } catch (err) {
-    console.error('[webhook] Processing failed:', err?.message || err);
+    const detail =
+      err?.data?.detail ||
+      err?.data?.title ||
+      err?.message ||
+      String(err);
+    const status = err?.code || err?.status || err?.data?.status || null;
+    console.error('[webhook] Processing failed:', detail, status ? `(status=${status})` : '');
     // Still 200 so Telegram does not retry forever on app bugs;
     // flip to 500 if you prefer Telegram retries.
-    return json(res, 200, { ok: false, error: 'processing_failed' });
+    return json(res, 200, {
+      ok: false,
+      error: 'processing_failed',
+      detail,
+      status,
+    });
   }
 };
 
