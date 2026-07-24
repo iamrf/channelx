@@ -2,51 +2,16 @@
 
 require('dotenv').config();
 
-const { createBot, stopBot } = require('./telegram');
-const { createTwitterClient } = require('./twitter');
-const { processChannelPost } = require('./handler');
-const { DuplicateTracker } = require('./utils');
-
-const requiredEnv = [
-  'TELEGRAM_TOKEN',
-  'CHANNEL_ID',
-  'TWITTER_API_KEY',
-  'TWITTER_API_SECRET',
-  'TWITTER_ACCESS_TOKEN',
-  'TWITTER_ACCESS_SECRET',
-];
+const { createApp } = require('./app');
+const { loadConfig, requiredEnv, CORE_REQUIRED } = require('./config');
+const { stopBot } = require('./telegram');
 
 /**
- * Validate required environment variables.
- * @returns {{ ok: true, env: object } | { ok: false, missing: string[] }}
- */
-const loadConfig = (env = process.env) => {
-  const missing = requiredEnv.filter((key) => !env[key] || String(env[key]).trim() === '');
-  if (missing.length > 0) {
-    return { ok: false, missing };
-  }
-
-  return {
-    ok: true,
-    env: {
-      telegramToken: env.TELEGRAM_TOKEN.trim(),
-      channelId: env.CHANNEL_ID.trim(),
-      twitter: {
-        appKey: env.TWITTER_API_KEY.trim(),
-        appSecret: env.TWITTER_API_SECRET.trim(),
-        accessToken: env.TWITTER_ACCESS_TOKEN.trim(),
-        accessSecret: env.TWITTER_ACCESS_SECRET.trim(),
-      },
-    },
-  };
-};
-
-/**
- * Wire Telegram channel_post → Twitter and start polling.
+ * Wire Telegram channel_post → Twitter and start polling (Ubuntu / local).
  * @param {object} [overrides] — injectable deps for tests
  */
 const start = async (overrides = {}) => {
-  const config = overrides.config || loadConfig();
+  const config = overrides.config || loadConfig(overrides.processEnv || process.env);
   if (!config.ok) {
     console.error(
       `[config] Missing required environment variables: ${config.missing.join(', ')}`
@@ -56,20 +21,34 @@ const start = async (overrides = {}) => {
     return null;
   }
 
-  const { telegramToken, channelId, twitter: twitterCreds } = config.env;
+  if (config.env.runMode === 'webhook' && !overrides.forcePolling) {
+    console.error(
+      '[main] RUN_MODE=webhook — use the Vercel/webhook HTTP entrypoint, not npm start.\n' +
+        '        For Ubuntu long-polling set RUN_MODE=polling (default).'
+    );
+    process.exitCode = 1;
+    return null;
+  }
 
-  // TODO: Replace in-memory Set with Redis/SQLite for durable deduplication across restarts.
-  const duplicates = overrides.duplicates || new DuplicateTracker();
-  const bot = overrides.bot || createBot(telegramToken, { polling: true });
-  const twitter = overrides.twitter || createTwitterClient(twitterCreds);
+  const app = createApp({
+    ...overrides,
+    config,
+    polling: true,
+  });
 
-  console.log(`[main] Listening for channel_post events from CHANNEL_ID=${channelId}`);
+  if (!app.ok) {
+    process.exitCode = 1;
+    return null;
+  }
+
+  const { bot, twitter, duplicates, handleChannelPost, config: cfg } = app;
+
+  console.log(`[main] Listening for channel_post events from CHANNEL_ID=${cfg.channelId}`);
 
   const onChannelPost = async (msg) => {
     try {
-      await processChannelPost({ bot, twitter, channelId, duplicates }, msg);
+      await handleChannelPost(msg);
     } catch (err) {
-      // Already logged in handler; keep the process alive
       console.error('[main] channel_post handler error:', err?.message || err);
     }
   };
@@ -94,9 +73,9 @@ const start = async (overrides = {}) => {
     process.once('SIGTERM', () => shutdown('SIGTERM'));
   }
 
-  console.log('[main] Bot is running. Press Ctrl+C to stop.');
+  console.log('[main] Bot is running (polling). Press Ctrl+C to stop.');
 
-  return { bot, twitter, duplicates, shutdown, onChannelPost };
+  return { bot, twitter, duplicates, shutdown, onChannelPost, app };
 };
 
 if (require.main === module) {
@@ -110,4 +89,5 @@ module.exports = {
   start,
   loadConfig,
   requiredEnv,
+  CORE_REQUIRED,
 };

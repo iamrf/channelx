@@ -4,7 +4,7 @@ Automatically reposts new posts from a Telegram channel to Twitter (X) using lon
 
 ## Features
 
-- Long-polls Telegram for `channel_post` events
+- Long-polls Telegram for `channel_post` events (**Ubuntu**) or receives webhooks (**Vercel**)
 - Filters by `CHANNEL_ID` (numeric ID or `@username`)
 - Extracts text/captions and media (photos, videos, GIFs)
 - Downloads Telegram files and uploads them to Twitter (v1.1 media upload)
@@ -12,6 +12,11 @@ Automatically reposts new posts from a Telegram channel to Twitter (X) using lon
 - In-memory duplicate detection by `message_id`
 - Exponential backoff retries on Twitter rate limits
 - Graceful shutdown on `SIGINT` / `SIGTERM`
+- GitHub Actions CI + CD for **Vercel** and **Ubuntu/systemd**
+
+## Deploy
+
+Production setup (Vercel webhook, Ubuntu polling, secrets, workflows): see **[DEPLOY.md](./DEPLOY.md)**.
 
 ## Prerequisites
 
@@ -94,20 +99,25 @@ Tests cover channel matching, media/text extraction, duplicate tracking, retry/b
 ## Project structure
 
 ```text
+├── .github/workflows/   # CI + Vercel/Ubuntu CD
+├── api/                 # Vercel serverless (webhook + health)
+├── deploy/              # systemd + Ubuntu scripts
+├── scripts/             # set/delete Telegram webhook
+├── vercel.json
+├── DEPLOY.md
 ├── .env.example
 ├── package.json
 ├── README.md
 ├── src/
-│   ├── index.js      # Entry point, wiring, graceful shutdown
-│   ├── telegram.js   # Bot init, getFileLink, stopPolling
-│   ├── twitter.js    # Media download/upload + tweet posting
-│   ├── handler.js    # channel_post → tweet pipeline
-│   └── utils.js      # Matching, extraction, dedupe, retry
+│   ├── index.js         # Polling entry (Ubuntu/local)
+│   ├── app.js           # Shared runtime
+│   ├── config.js        # Env validation
+│   ├── webhook-http.js  # HTTP helpers
+│   ├── telegram.js
+│   ├── twitter.js
+│   ├── handler.js
+│   └── utils.js
 └── test/
-    ├── utils.test.js
-    ├── handler.test.js
-    ├── twitter.test.js
-    └── index.test.js
 ```
 
 ## Notes & limits

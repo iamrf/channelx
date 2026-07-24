@@ -1,0 +1,92 @@
+name: Deploy Vercel
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Vercel environment
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - preview
+
+concurrency:
+  group: deploy-vercel
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Gate — tests
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.DEPLOY_TARGET == 'vercel' || vars.DEPLOY_TARGET == 'both' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    name: Deploy to Vercel
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.DEPLOY_TARGET == 'vercel' || vars.DEPLOY_TARGET == 'both' }}
+    needs: test
+    runs-on: ubuntu-latest
+    environment: vercel
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel env
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build project artifacts
+        run: vercel build ${{ github.event.inputs.environment == 'preview' && '' || '--prod' }} --token="$VERCEL_TOKEN"
+
+      - name: Deploy prebuilt
+        id: deploy
+        run: |
+          if [ "${{ github.event.inputs.environment || 'production' }}" = "preview" ]; then
+            URL=$(vercel deploy --prebuilt --token="$VERCEL_TOKEN")
+          else
+            URL=$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed: $URL"
+
+      - name: Point Telegram webhook at Vercel
+        if: ${{ (github.event.inputs.environment || 'production') != 'preview' }}
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          DEPLOY_URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -euo pipefail
+          WEBHOOK_URL="${DEPLOY_URL%/}/api/webhook"
+          echo "Setting Telegram webhook → $WEBHOOK_URL"
+          PARAMS="url=${WEBHOOK_URL}&allowed_updates=%5B%22channel_post%22%5D"
+          if [ -n "${WEBHOOK_SECRET:-}" ]; then
+            PARAMS="${PARAMS}&secret_token=${WEBHOOK_SECRET}"
+          fi
+          curl -fsS "https://api.telegram.org/bot${TELEGRAM_TOKEN}/setWebhook?${PARAMS}"
+          echo
+          curl -fsS "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getWebhookInfo"
+          echo

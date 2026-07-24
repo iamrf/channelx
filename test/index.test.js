@@ -3,10 +3,10 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { loadConfig, requiredEnv } = require('../src/index');
+const { loadConfig, requiredEnv, start } = require('../src/index');
 const { DuplicateTracker } = require('../src/utils');
 
-describe('loadConfig', () => {
+describe('loadConfig (re-export)', () => {
   it('lists all required keys', () => {
     assert.ok(requiredEnv.includes('TELEGRAM_TOKEN'));
     assert.ok(requiredEnv.includes('CHANNEL_ID'));
@@ -57,7 +57,6 @@ describe('start (integration wiring)', () => {
       },
     };
 
-    const { start } = require('../src/index');
     const duplicates = new DuplicateTracker();
 
     const handle = await start({
@@ -66,6 +65,10 @@ describe('start (integration wiring)', () => {
         env: {
           telegramToken: 't',
           channelId: '@demo_channel',
+          runMode: 'polling',
+          webhookUrl: '',
+          webhookSecret: '',
+          port: 3000,
           twitter: {
             appKey: 'k',
             appSecret: 's',
@@ -103,9 +106,37 @@ describe('start (integration wiring)', () => {
   it('returns null and sets exitCode when config invalid', async () => {
     const prev = process.exitCode;
     process.exitCode = undefined;
-    const { start } = require('../src/index');
     const handle = await start({
       config: { ok: false, missing: ['TELEGRAM_TOKEN'] },
+      skipSignalHandlers: true,
+      keepAlive: true,
+    });
+    assert.equal(handle, null);
+    assert.equal(process.exitCode, 1);
+    process.exitCode = prev;
+  });
+
+  it('refuses RUN_MODE=webhook for polling entrypoint', async () => {
+    const prev = process.exitCode;
+    process.exitCode = undefined;
+    const handle = await start({
+      config: {
+        ok: true,
+        env: {
+          telegramToken: 't',
+          channelId: '@c',
+          runMode: 'webhook',
+          webhookUrl: 'https://x/api/webhook',
+          webhookSecret: '',
+          port: 3000,
+          twitter: {
+            appKey: 'k',
+            appSecret: 's',
+            accessToken: 'at',
+            accessSecret: 'as',
+          },
+        },
+      },
       skipSignalHandlers: true,
       keepAlive: true,
     });

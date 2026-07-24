@@ -10,7 +10,10 @@
   "scripts": {
     "start": "node src/index.js",
     "test": "node --test test/**/*.test.js",
-    "test:watch": "node --test --watch test/**/*.test.js"
+    "test:watch": "node --test --watch test/**/*.test.js",
+    "webhook:set": "node scripts/telegram-webhook.js set",
+    "webhook:delete": "node scripts/telegram-webhook.js delete",
+    "webhook:info": "node scripts/telegram-webhook.js info"
   },
   "keywords": [
     "telegram",
@@ -18,7 +21,9 @@
     "x",
     "repost",
     "bot",
-    "crosspost"
+    "crosspost",
+    "vercel",
+    "systemd"
   ],
   "license": "MIT",
   "dependencies": {

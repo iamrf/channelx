@@ -1,0 +1,78 @@
+name: Deploy Ubuntu
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ubuntu
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Gate — tests
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.DEPLOY_TARGET == 'ubuntu' || vars.DEPLOY_TARGET == 'both' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  deploy:
+    name: Deploy to Ubuntu
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.DEPLOY_TARGET == 'ubuntu' || vars.DEPLOY_TARGET == 'both' }}
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ubuntu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.UBUNTU_SSH_KEY }}
+
+      - name: Add host to known_hosts
+        env:
+          HOST: ${{ secrets.UBUNTU_HOST }}
+          PORT: ${{ secrets.UBUNTU_SSH_PORT }}
+        run: |
+          PORT="${PORT:-22}"
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "${PORT}" -H "${HOST}" >> ~/.ssh/known_hosts
+
+      - name: Rsync application
+        env:
+          HOST: ${{ secrets.UBUNTU_HOST }}
+          USER: ${{ secrets.UBUNTU_USER }}
+          PORT: ${{ secrets.UBUNTU_SSH_PORT }}
+          APP_DIR: ${{ secrets.UBUNTU_APP_DIR }}
+        run: |
+          PORT="${PORT:-22}"
+          APP_DIR="${APP_DIR:-/opt/channelx}"
+          rsync -az --delete \
+            -e "ssh -p ${PORT}" \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude '.env' \
+            --exclude '.vercel' \
+            --exclude 'coverage' \
+            ./ "${USER}@${HOST}:${APP_DIR}/"
+
+      - name: Remote install + restart
+        env:
+          HOST: ${{ secrets.UBUNTU_HOST }}
+          USER: ${{ secrets.UBUNTU_USER }}
+          PORT: ${{ secrets.UBUNTU_SSH_PORT }}
+          APP_DIR: ${{ secrets.UBUNTU_APP_DIR }}
+        run: |
+          PORT="${PORT:-22}"
+          APP_DIR="${APP_DIR:-/opt/channelx}"
+          ssh -p "${PORT}" "${USER}@${HOST}" \
+            "APP_DIR='${APP_DIR}' bash ${APP_DIR}/deploy/remote-deploy.sh"
